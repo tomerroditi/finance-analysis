@@ -23,7 +23,12 @@ import { RefundTagMismatchNotice } from "./RefundTagMismatchNotice";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
-import { REFUND_WRITE_PLAN } from "../../writePlans";
+import {
+  REFUND_WRITE_PLAN,
+  cancelPendingRefund,
+  closePendingRefund,
+  patchRefundLink,
+} from "../../writePlans";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 
 type StatusFilter = "all" | "open" | "resolved" | "closed";
@@ -115,19 +120,24 @@ const RefundsView: React.FC = () => {
     queryFn: () => pendingRefundsApi.getRefundSources().then((res) => res.data),
   });
 
-  // The mutation cache refreshes after each of these, following its plan.
-  const refundWrite = () => ({ refresh: REFUND_WRITE_PLAN });
+  // Each answers on click; the mutation cache refreshes after it, following
+  // the refund plan.
+  const refundWrite = (restore: () => void) => ({ refresh: REFUND_WRITE_PLAN, restore });
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
-    onMutate: refundWrite,
+    onMutate: (id) => refundWrite(closePendingRefund(queryClient, qk.pendingRefunds.all(), id)),
+    onError: (_error, _id, context) => context?.restore(),
   });
   const cancelMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.cancel(id),
-    onMutate: refundWrite,
+    onMutate: (id) => refundWrite(cancelPendingRefund(queryClient, qk.pendingRefunds.all(), id)),
+    onError: (_error, _id, context) => context?.restore(),
   });
   const unlinkMutation = useMutation({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
-    onMutate: refundWrite,
+    onMutate: (linkId) =>
+      refundWrite(patchRefundLink(queryClient, qk.pendingRefunds.all(), { unlink: linkId })),
+    onError: (_error, _linkId, context) => context?.restore(),
   });
 
   // A note is shown at once and reaches nothing but the refund lists.

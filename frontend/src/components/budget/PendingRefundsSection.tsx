@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Link2, X, Lock, ChevronDown, ChevronUp } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
@@ -8,7 +8,8 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
-import { REFUND_WRITE_PLAN } from "../../writePlans";
+import { REFUND_WRITE_PLAN, cancelPendingRefund, closePendingRefund } from "../../writePlans";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -28,15 +29,30 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const [mobileActionsId, setMobileActionsId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(true);
 
-  // The mutation cache refreshes after both, following the refund plan.
+  const queryClient = useQueryClient();
+  const qk = useQueryKeys();
+  const refundOf = (id: number) => items.find((item) => item.id === id) ?? id;
+
+  // Both answer on click; the mutation cache refreshes after them, following
+  // the refund plan.
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
-    onMutate: () => ({ refresh: REFUND_WRITE_PLAN }),
+    onMutate: (id) => ({
+      refresh: REFUND_WRITE_PLAN,
+      restore: closePendingRefund(queryClient, qk.pendingRefunds.all(), refundOf(id)),
+    }),
+    onError: (_error, _id, context) => context?.restore(),
   });
   const cancelMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.cancel(id),
-    onMutate: () => ({ refresh: REFUND_WRITE_PLAN }),
-    onError: () => notify.error(t("budget.failedCancelRefund")),
+    onMutate: (id) => ({
+      refresh: REFUND_WRITE_PLAN,
+      restore: cancelPendingRefund(queryClient, qk.pendingRefunds.all(), refundOf(id)),
+    }),
+    onError: (_error, _id, context) => {
+      context?.restore();
+      notify.error(t("budget.failedCancelRefund"));
+    },
   });
 
   if (!items || items.length === 0) {

@@ -47,10 +47,18 @@ import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { isWithoutRule as matchesNoRule } from "../../utils/taggingRuleEval";
 import { matchesSource, sourceOptions } from "../../utils/transactionSources";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { patchBudgetForRetag, widenForCascade } from "../budget/budgetOptimistic";
+import {
+  budgetRefresh,
+  patchBudgetForDelete,
+  patchBudgetForRetag,
+  widenForCascade,
+} from "../budget/budgetOptimistic";
 import {
   REFUND_WRITE_PLAN,
   UNCHANGED_BY_ROW_WRITE,
+  cancelPendingRefund,
+  markPendingRefund,
+  patchRefundLink,
   patchTransactionLists,
   planMonthMove,
   removeFromTransactionLists,
@@ -277,10 +285,17 @@ export function RecentTransactionsFeed({
   const deleteMutation = useMutation({
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(String(tx.unique_id ?? tx.id), tx.source || ""),
-    onMutate: (tx) => ({
-      restore: removeFromTransactionLists(queryClient, [tx]),
-      refresh: { skip: UNCHANGED_BY_ROW_WRITE },
-    }),
+    onMutate: (tx) => {
+      const restoreLists = removeFromTransactionLists(queryClient, [tx]);
+      const budget = patchBudgetForDelete(queryClient, [tx]);
+      return {
+        restore: () => {
+          restoreLists();
+          budget.restore();
+        },
+        refresh: budgetRefresh(queryClient, budget, UNCHANGED_BY_ROW_WRITE),
+      };
+    },
     onError: (_error, _tx, context) => {
       context?.restore();
       notify.error(t("transactions.failedDelete"));
@@ -309,9 +324,13 @@ export function RecentTransactionsFeed({
       }),
     onMutate: (tx) => {
       markingRefund.begin(txKeyOf(tx));
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: markPendingRefund(queryClient, qk.pendingRefunds.all(), tx, Math.abs(tx.amount)),
+      };
     },
     onSettled: (_data, _error, tx) => markingRefund.end(txKeyOf(tx)),
+    onError: (_error, _tx, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 
@@ -322,9 +341,13 @@ export function RecentTransactionsFeed({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
     onMutate: (pendingId) => {
       cancellingRefund.begin(pendingId);
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: cancelPendingRefund(queryClient, qk.pendingRefunds.all(), pendingId),
+      };
     },
     onSettled: (_data, _error, pendingId) => cancellingRefund.end(pendingId),
+    onError: (_error, _pendingId, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 
@@ -332,9 +355,13 @@ export function RecentTransactionsFeed({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onMutate: (linkId) => {
       unlinkingRefund.begin(linkId);
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: patchRefundLink(queryClient, qk.pendingRefunds.all(), { unlink: linkId }),
+      };
     },
     onSettled: (_data, _error, linkId) => unlinkingRefund.end(linkId),
+    onError: (_error, _linkId, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 

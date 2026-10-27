@@ -1,6 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { Transaction } from "../../types/transaction";
-import type { ProjectStatus } from "../../services/api";
+import type { PendingRefund, ProjectStatus } from "../../services/api";
 import { qkPrefix } from "../../services/queryKeys";
 import type { RefreshPlan } from "../../queryInvalidation";
 
@@ -18,9 +18,11 @@ export interface RetagEdit {
 }
 
 /** What a monthly analysis row carries on top of a plain transaction. */
-type AnalysisRow = Transaction & {
+export type AnalysisRow = Transaction & {
   split_id?: number | null;
   net_amount?: number | null;
+  budget_year?: number;
+  budget_month?: number;
 };
 
 interface AnalysisRule {
@@ -49,6 +51,9 @@ interface ProjectSpending {
 export interface MonthlyAnalysis {
   rules?: AnalysisItem[] | null;
   project_spending?: { projects?: ProjectSpending[]; total_spent?: number };
+  uncategorized_count?: number;
+  uncategorized_amount?: number;
+  pending_refunds?: { items?: PendingRefund[]; total_expected?: number };
   [key: string]: unknown;
 }
 
@@ -109,7 +114,8 @@ type Owner =
   | { kind: "elsewhere" }
   | { kind: "project"; category: string }
   | { kind: "rule"; index: number }
-  | { kind: "other" };
+  | { kind: "other" }
+  | { kind: "total" };
 
 /**
  * Who claims a row with this category and tag — `backend/services/budget/ledger.py`
@@ -143,7 +149,190 @@ function claim(
   return owner ? { kind: "rule", index: owner.index } : { kind: "other" };
 }
 
-const inPool = (owner: Owner) => owner.kind === "rule" || owner.kind === "other";
+const inPool = (owner: Owner) =>
+  owner.kind === "rule" || owner.kind === "other" || owner.kind === "total";
+
+/** A row's identity in a month: its table and id, and its split part if it is one. */
+const identity = (row: AnalysisRow) => `${rowKey(row.source, row.unique_id)}#${row.split_id ?? ""}`;
+
+/**
+ * What becomes of a row a write reaches: the rows it turns into in this
+ * month (`[]` takes it out), or `undefined` for a row the write leaves alone.
+ */
+export type RowChange = (row: AnalysisRow) => AnalysisRow[] | undefined;
+
+/**
+ * Re-derive a month's analysis as if a write had landed.
+ *
+ * Every write that moves money between the month's pools comes down to this:
+ * some listed rows leave where they were and become other rows (a retag gives
+ * a row a new category, a split turns it into its parts, a pending refund
+ * changes what it costs, a delete or a move to another month removes it), and
+ * rows may arrive from elsewhere (a move into this month). Each arriving row
+ * goes to the owner the backend's claim order would give it, with its cost,
+ * so the tab answers on click; the refetch that follows either agrees or
+ * corrects it.
+ *
+ * @param analysis - The cached month to re-derive.
+ * @param change - What the write does to each listed row.
+ * @param ctx - The project categories and yearly rules known to the client.
+ * @param arriving - Rows the write brings into this month.
+ * @returns A new analysis, or the input itself when the write touches nothing
+ *   in it.
+ */
+export function applyRowChanges(
+  analysis: MonthlyAnalysis,
+  change: RowChange,
+  ctx: ClaimContext,
+  arriving: AnalysisRow[] = [],
+): MonthlyAnalysis {
+  if (!analysis) return analysis;
+  const rulesIn = analysis.rules ?? [];
+  const projectsIn = analysis.project_spending?.projects ?? [];
+  if (rulesIn.length === 0 && projectsIn.length === 0) return analysis;
+
+  const items: AnalysisItem[] = rulesIn.map((item) => ({ ...item, data: [...item.data] }));
+  let projects: ProjectSpending[] = projectsIn.map((p) => ({
+    ...p,
+    transactions: [...(p.transactions ?? [])],
+  }));
+  let projectsTotal = analysis.project_spending?.total_spent ?? 0;
+  const total = items.find(isTotal);
+  // With no rule beside it, the Total lists the month's pool itself and the
+  // backend shows no Other Expenses entry.
+  const totalLists = !!total && !items.some((item) => !isTotal(item) && !isOther(item));
+
+  const leaving: { row: AnalysisRow; from: Owner; into: AnalysisRow[] }[] = [];
+  const listed = new Set<string>();
+  const visit = (row: AnalysisRow, from: Owner) => {
+    const id = identity(row);
+    if (listed.has(id)) return;
+    listed.add(id);
+    const into = change(row);
+    if (into) leaving.push({ row, from, into });
+  };
+  items.forEach((item, index) => {
+    if (isTotal(item)) {
+      if (totalLists) item.data.forEach((row) => visit(row, { kind: "total" }));
+      return;
+    }
+    item.data.forEach((row) => visit(row, isOther(item) ? { kind: "other" } : { kind: "rule", index }));
+  });
+  projects.forEach((project) =>
+    (project.transactions ?? []).forEach((row) =>
+      visit(row, { kind: "project", category: project.category }),
+    ),
+  );
+  const arrivals = arriving.filter((row) => !listed.has(identity(row)));
+  if (leaving.length === 0 && arrivals.length === 0) return analysis;
+
+  let uncategorizedCount = analysis.uncategorized_count;
+  let uncategorizedAmount = analysis.uncategorized_amount;
+  const countUncategorized = (row: AnalysisRow, sign: 1 | -1) => {
+    if (row.category || typeof uncategorizedCount !== "number") return;
+    uncategorizedCount += sign;
+    uncategorizedAmount = (uncategorizedAmount ?? 0) + sign * Math.abs(row.amount ?? 0);
+  };
+  const otherIndex = () => items.findIndex(isOther);
+
+  const remove = (row: AnalysisRow, from: Owner) => {
+    const id = identity(row);
+    const cost = costOf(row);
+    if (from.kind === "rule" || from.kind === "other") {
+      const item = items[from.kind === "rule" ? from.index : otherIndex()];
+      item.data = item.data.filter((r) => identity(r) !== id);
+      item.current_amount -= cost;
+    } else if (from.kind === "total") {
+      total!.data = total!.data.filter((r) => identity(r) !== id);
+    } else if (from.kind === "project") {
+      const project = projects.find((p) => p.category === from.category)!;
+      project.transactions = (project.transactions ?? []).filter((r) => identity(r) !== id);
+      project.spent -= cost;
+      projectsTotal -= cost;
+    }
+    if (inPool(from)) {
+      if (total) total.current_amount -= cost;
+      countUncategorized(row, -1);
+    }
+  };
+
+  const add = (row: AnalysisRow) => {
+    const category = row.category || null;
+    const tag = row.tag || null;
+    let to = claim(items, category, tag, row.budget_year, ctx);
+    const cost = costOf(row);
+    if (to.kind === "other" && totalLists) to = { kind: "total" };
+
+    if (to.kind === "rule") {
+      items[to.index].data.push(row);
+      items[to.index].current_amount += cost;
+    } else if (to.kind === "total") {
+      total!.data.push(row);
+    } else if (to.kind === "other") {
+      let index = otherIndex();
+      if (index === -1 && total) {
+        const allocated = items
+          .filter((item) => !isTotal(item) && !isOther(item))
+          .reduce((sum, item) => sum + (item.rule.amount ?? 0), 0);
+        items.push({
+          rule: {
+            name: OTHER_EXPENSES,
+            amount: Math.max((total.rule.amount ?? 0) - allocated, 0),
+            category: OTHER_EXPENSES,
+            tags: OTHER_EXPENSES,
+            id: `${row.budget_year ?? ""}${row.budget_month ?? ""}_Other_Expenses`,
+          },
+          current_amount: 0,
+          data: [],
+          allow_edit: false,
+          allow_delete: false,
+        });
+        index = items.length - 1;
+      }
+      if (index === -1) return;
+      items[index].data.push(row);
+      items[index].current_amount += cost;
+    } else if (to.kind === "project") {
+      let project = projects.find((p) => p.category === to.category);
+      if (!project) {
+        project = { category: to.category, spent: 0, transactions: [] };
+        projects.push(project);
+      }
+      project.transactions = [...(project.transactions ?? []), row];
+      project.spent += cost;
+      projectsTotal += cost;
+    }
+    // The Total Budget totals the whole monthly pool, so it moves with every
+    // row that enters it, whichever rule takes the row.
+    if (inPool(to)) {
+      if (total) total.current_amount += cost;
+      countUncategorized(row, 1);
+    }
+  };
+
+  for (const { row, from, into } of leaving) {
+    remove(row, from);
+    into.forEach(add);
+  }
+  arrivals.forEach(add);
+
+  // The backend lists Other Expenses only while it holds something.
+  const rules = items.filter((item) => !isOther(item) || item.data.length > 0);
+  projects = projects.filter((p) => (p.transactions ?? []).length > 0);
+
+  return {
+    ...analysis,
+    rules,
+    project_spending: {
+      ...analysis.project_spending,
+      projects,
+      ...(projects.length > 0 ? { total_spent: projectsTotal } : { total_spent: undefined }),
+    },
+    ...(typeof uncategorizedCount === "number"
+      ? { uncategorized_count: uncategorizedCount, uncategorized_amount: uncategorizedAmount }
+      : {}),
+  };
+}
 
 /**
  * Re-derive a month's analysis as if a batch of category/tag writes had
@@ -152,8 +341,7 @@ const inPool = (owner: Owner) => owner.kind === "rule" || owner.kind === "other"
  * A retag invalidates the whole budget, and the analysis behind the Monthly
  * tab is the slowest read on the page, so waiting for it left the row in its
  * old rule for seconds after the click. This moves each written row — and its
- * cost — to the rule the backend's claim order would give it, so the tab
- * answers immediately; the refetch that follows either agrees or corrects it.
+ * cost — to the rule the backend's claim order would give it.
  *
  * Rows a retag cannot place from here are left alone for the server: split
  * parts (their write lands on the parent) and rows no list of this month
@@ -170,124 +358,17 @@ export function applyRetag(
   ctx: ClaimContext,
 ): MonthlyAnalysis {
   if (!analysis?.rules?.length || edits.length === 0) return analysis;
+  return applyRowChanges(analysis, retagChange(edits), ctx);
+}
+
+function retagChange(edits: RetagEdit[]): RowChange {
   const pending = new Map(edits.map((edit) => [rowKey(edit.source, edit.unique_id), edit]));
-
-  const items: AnalysisItem[] = analysis.rules.map((item) => ({ ...item, data: [...item.data] }));
-  let projects: ProjectSpending[] = (analysis.project_spending?.projects ?? []).map((p) => ({
-    ...p,
-    transactions: [...(p.transactions ?? [])],
-  }));
-  let projectsTotal = analysis.project_spending?.total_spent ?? 0;
-  const total = items.find(isTotal);
-
-  const found: { row: AnalysisRow; owner: Owner }[] = [];
-  const seen = new Set<string>();
-  const take = (row: AnalysisRow, owner: Owner) => {
-    const key = rowKey(row.source, row.unique_id);
-    if (row.split_id != null || !pending.has(key) || seen.has(key)) return;
-    seen.add(key);
-    found.push({ row, owner });
-  };
-  items.forEach((item, index) => {
-    if (isTotal(item)) return;
-    item.data.forEach((row) => take(row, isOther(item) ? { kind: "other" } : { kind: "rule", index }));
-  });
-  projects.forEach((project) =>
-    (project.transactions ?? []).forEach((row) =>
-      take(row, { kind: "project", category: project.category }),
-    ),
-  );
-  if (found.length === 0) return analysis;
-
-  const otherIndex = () => items.findIndex(isOther);
-  const sameRow = (a: AnalysisRow) => (b: AnalysisRow) =>
-    b.split_id == null && rowKey(a.source, a.unique_id) === rowKey(b.source, b.unique_id);
-
-  for (const { row, owner: from } of found) {
-    const edit = pending.get(rowKey(row.source, row.unique_id))!;
+  return (row) => {
+    const edit = pending.get(rowKey(row.source, row.unique_id));
+    if (!edit || row.split_id != null) return undefined;
     const category = edit.category === undefined ? (row.category ?? null) : edit.category || null;
     const tag = edit.tag === undefined ? (row.tag ?? null) : edit.tag || null;
-    const moved: AnalysisRow = { ...row, category: category ?? undefined, tag: tag ?? undefined };
-    const year = (row as { budget_year?: number }).budget_year;
-    const to = claim(items, category, tag, year, ctx);
-    const cost = costOf(row);
-
-    // Out of where it was.
-    if (from.kind === "rule" || from.kind === "other") {
-      const index = from.kind === "rule" ? from.index : otherIndex();
-      const item = items[index];
-      item.data = item.data.filter((r) => !sameRow(row)(r));
-      item.current_amount -= cost;
-    } else if (from.kind === "project") {
-      const project = projects.find((p) => p.category === from.category)!;
-      project.transactions = (project.transactions ?? []).filter((r) => !sameRow(row)(r));
-      project.spent -= cost;
-      projectsTotal -= cost;
-    }
-
-    // Into where the claim order puts it.
-    if (to.kind === "rule") {
-      items[to.index].data.push(moved);
-      items[to.index].current_amount += cost;
-    } else if (to.kind === "other") {
-      let index = otherIndex();
-      if (index === -1 && total) {
-        const allocated = items
-          .filter((item) => !isTotal(item) && !isOther(item))
-          .reduce((sum, item) => sum + (item.rule.amount ?? 0), 0);
-        items.push({
-          rule: {
-            name: OTHER_EXPENSES,
-            amount: Math.max((total.rule.amount ?? 0) - allocated, 0),
-            category: OTHER_EXPENSES,
-            tags: OTHER_EXPENSES,
-            id: `${year ?? ""}${(row as { budget_month?: number }).budget_month ?? ""}_Other_Expenses`,
-          },
-          current_amount: 0,
-          data: [],
-          allow_edit: false,
-          allow_delete: false,
-        });
-        index = items.length - 1;
-      }
-      if (index !== -1) {
-        items[index].data.push(moved);
-        items[index].current_amount += cost;
-      }
-    } else if (to.kind === "project") {
-      let project = projects.find((p) => p.category === to.category);
-      if (!project) {
-        project = { category: to.category, spent: 0, transactions: [] };
-        projects.push(project);
-      }
-      project.transactions = [...(project.transactions ?? []), moved];
-      project.spent += cost;
-      projectsTotal += cost;
-    }
-
-    // The Total Budget totals the whole monthly pool, so its amount only
-    // moves when the retag crosses the pool's edge. It lists no rows of its
-    // own — the month's list is the union of the other rules' rows.
-    if (total) {
-      const wasIn = inPool(from);
-      const nowIn = inPool(to);
-      if (wasIn && !nowIn) total.current_amount -= cost;
-      else if (!wasIn && nowIn) total.current_amount += cost;
-    }
-  }
-
-  // The backend lists Other Expenses only while it holds something.
-  const rules = items.filter((item) => !isOther(item) || item.data.length > 0);
-  projects = projects.filter((p) => (p.transactions ?? []).length > 0);
-
-  return {
-    ...analysis,
-    rules,
-    project_spending: {
-      ...analysis.project_spending,
-      projects,
-      ...(projects.length > 0 ? { total_spent: projectsTotal } : { total_spent: undefined }),
-    },
+    return [{ ...row, category: category ?? undefined, tag: tag ?? undefined }];
   };
 }
 
@@ -365,12 +446,103 @@ export function widenForCascade(plan: RefreshPlan | undefined, refundsRetagged: 
   (plan as { skip?: readonly QueryKey[] }).skip = UNCHANGED_BY_RETAG;
 }
 
+/** A cached month's analysis key, without the variant and demo parts. */
+const monthKey = (year: number, month: number) => [...qkPrefix.budgetAnalysis, year, month] as const;
+
+/** What {@link patchBudget} did across the cache. */
+export interface BudgetPatch {
+  /** Put every patched month back, for a failed write. */
+  restore: () => void;
+  /** The months (`"year-month"`) whose analysis the write changed. */
+  months: Set<string>;
+  /** Whether every row the write names was found in some cached month. */
+  placed: boolean;
+}
+
 /**
- * Move retagged rows to their new rule in every cached monthly analysis, now.
+ * Apply a write to every cached monthly analysis, now.
  *
  * Reads still in flight are cancelled first — they were computed before the
  * write and would land on top of the patch. The refetch that follows the write
  * replaces the patch with the server's answer.
+ *
+ * @param client - The app's query client.
+ * @param change - What the write does to each listed row.
+ * @param names - `rowKey`s of the rows the write names, to tell whether all
+ *   of them were found (a row in no cached month could be in any month).
+ * @param arriving - The rows the write brings into a given month.
+ */
+export function patchBudget(
+  client: QueryClient,
+  change: RowChange,
+  names: readonly string[],
+  arriving?: (year: number, month: number) => AnalysisRow[],
+): BudgetPatch {
+  const cache = client.getQueryCache();
+  for (const query of cache.findAll({ queryKey: qkPrefix.budgetAnalysis, fetchStatus: "fetching" })) {
+    if (query.state.data !== undefined) void query.cancel({ revert: true });
+  }
+
+  const ctx = claimContext(client);
+  const before = client.getQueriesData<MonthlyAnalysis>({ queryKey: qkPrefix.budgetAnalysis });
+  const found = new Set<string>();
+  const months = new Set<string>();
+  const tracked: RowChange = (row) => {
+    const into = change(row);
+    if (into) found.add(rowKey(row.source, row.unique_id));
+    return into;
+  };
+  for (const [key, data] of before) {
+    if (!data) continue;
+    const year = Number(key[2]);
+    const month = Number(key[3]);
+    const next = applyRowChanges(data, tracked, ctx, arriving?.(year, month) ?? []);
+    if (next === data) continue;
+    client.setQueryData(key, next);
+    months.add(`${year}-${month}`);
+  }
+  return {
+    restore: () => {
+      for (const [key, data] of before) client.setQueryData(key, data);
+    },
+    months,
+    placed: names.every((name) => found.has(name)),
+  };
+}
+
+/**
+ * The refresh after a write {@link patchBudget} placed: the months it touched
+ * first, and none of the months it did not — unless a row was nowhere in the
+ * cache, and so could be in any month.
+ *
+ * @param client - The app's query client.
+ * @param patch - What the patch did.
+ * @param skip - Reads the write cannot change, on top of the untouched months.
+ */
+export function budgetRefresh(
+  client: QueryClient,
+  patch: BudgetPatch,
+  skip: readonly QueryKey[],
+): RefreshPlan {
+  const touched = [...patch.months].map((month) => {
+    const [year, number] = month.split("-").map(Number);
+    return monthKey(year, number);
+  });
+  const untouched = patch.placed
+    ? client
+        .getQueriesData<MonthlyAnalysis>({ queryKey: qkPrefix.budgetAnalysis })
+        .map(([key]) => key)
+        .filter((key) => !patch.months.has(`${key[2]}-${key[3]}`))
+        .map((key) => key.slice(0, 4))
+    : [];
+  return {
+    first: patch.placed && touched.length > 0 ? touched : [qkPrefix.budgetAnalysis],
+    skip: [...skip, ...untouched],
+  };
+}
+
+/**
+ * Move retagged rows to their new rule in every cached monthly analysis, now.
  *
  * @param client - The app's query client.
  * @param edits - The writes being sent.
@@ -384,58 +556,174 @@ export function patchBudgetForRetag(
   client: QueryClient,
   edits: RetagEdit[],
 ): { restore: () => void; refresh: RefreshPlan } {
-  const cache = client.getQueryCache();
-  for (const query of cache.findAll({ queryKey: qkPrefix.budgetAnalysis, fetchStatus: "fetching" })) {
-    if (query.state.data !== undefined) void query.cancel({ revert: true });
-  }
-
-  const ctx = claimContext(client);
-  const before = client.getQueriesData<MonthlyAnalysis>({ queryKey: qkPrefix.budgetAnalysis });
-  const wanted = new Set(edits.map((edit) => rowKey(edit.source, edit.unique_id)));
-  const found = new Set<string>();
-  const months = new Set<string>();
-  for (const [key, data] of before) {
-    if (!data) continue;
-    const next = applyRetag(data, edits, ctx);
-    if (next === data) continue;
-    client.setQueryData(key, next);
-    months.add(`${key[2]}-${key[3]}`);
-    for (const row of listedRows(data)) {
-      const id = rowKey(row.source, row.unique_id);
-      if (wanted.has(id)) found.add(id);
-    }
-  }
-
-  // Each analysis holds one budget month, so a month whose cached analysis
-  // listed none of these rows is one the write did not touch — unless a row
-  // was nowhere in the cache, and so could be in any month.
-  const placed = found.size === wanted.size;
-  const touched = [...months].map((month) => {
-    const [year, number] = month.split("-").map(Number);
-    return [...qkPrefix.budgetAnalysis, year, number] as const;
-  });
-  const untouched = placed
-    ? before
-        .map(([key]) => key)
-        .filter((key) => !months.has(`${key[2]}-${key[3]}`))
-        .map((key) => key.slice(0, 4))
-    : [];
-
+  const patch = patchBudget(
+    client,
+    retagChange(edits),
+    edits.map((edit) => rowKey(edit.source, edit.unique_id)),
+  );
   return {
-    restore: () => {
-      for (const [key, data] of before) client.setQueryData(key, data);
-    },
-    refresh: {
-      first: placed && touched.length > 0 ? touched : [qkPrefix.budgetAnalysis],
-      // A cash balance is a sum over its account's cash rows; only a write
-      // to one of those can move it.
-      skip: [
-        ...UNCHANGED_BY_RETAG,
-        ...untouched,
-        ...(edits.some((edit) => edit.source.includes("cash")) ? [] : [qkPrefix.cashBalances]),
-      ],
-    },
+    restore: patch.restore,
+    // A cash balance is a sum over its account's cash rows; only a write
+    // to one of those can move it.
+    refresh: budgetRefresh(client, patch, [
+      ...UNCHANGED_BY_RETAG,
+      ...(edits.some((edit) => edit.source.includes("cash")) ? [] : [qkPrefix.cashBalances]),
+    ]),
   };
+}
+
+/** A row named by its table and id, the way a write addresses it. */
+export interface RowRef {
+  source?: string;
+  unique_id?: string | number;
+  id?: string | number;
+}
+
+const refKey = (ref: RowRef) => rowKey(ref.source, ref.unique_id ?? ref.id);
+
+/**
+ * Take deleted rows out of every cached budget month, now.
+ *
+ * @param client - The app's query client.
+ * @param rows - The rows being deleted.
+ * @returns What the patch did, for {@link budgetRefresh} and a failed write.
+ */
+export function patchBudgetForDelete(client: QueryClient, rows: readonly RowRef[]): BudgetPatch {
+  const names = new Set(rows.map(refKey));
+  return patchBudget(
+    client,
+    (row) => (row.split_id == null && names.has(rowKey(row.source, row.unique_id)) ? [] : undefined),
+    [...names],
+  );
+}
+
+/** One part of a split being written, as `transactionsApi.split` sends it. */
+export interface SplitPart {
+  amount: number;
+  category: string;
+  tag: string;
+}
+
+/**
+ * The rows a split turns a transaction into, shaped as the merged lists serve
+ * split parts (`type: "split_child"`, the parent's fields alongside). Their
+ * ids are stand-ins — negative, so no real part can share one — until the
+ * refetch brings the real ones.
+ *
+ * @param parent - The row being split.
+ * @param parts - The parts being sent.
+ */
+export function splitRows<T extends Transaction>(parent: T, parts: readonly SplitPart[]): T[] {
+  return parts.map((part, index) => ({
+    ...parent,
+    unique_id: `split_pending_${parent.unique_id}_${index}`,
+    split_id: -(index + 1),
+    type: "split_child",
+    amount: part.amount,
+    category: part.category || undefined,
+    tag: part.tag || undefined,
+    net_amount: null,
+    parent_unique_id: Number(parent.unique_id),
+    parent_category: parent.category ?? null,
+    parent_tag: parent.tag ?? null,
+    parent_amount: parent.amount,
+  }));
+}
+
+/**
+ * Replace a split transaction by its parts in every cached budget month, now:
+ * each part goes to the rule that claims its own category and tag.
+ *
+ * @param client - The app's query client.
+ * @param parent - The row being split.
+ * @param parts - The parts being sent.
+ * @returns What the patch did, for {@link budgetRefresh} and a failed write.
+ */
+export function patchBudgetForSplit(
+  client: QueryClient,
+  parent: RowRef,
+  parts: readonly SplitPart[],
+): BudgetPatch {
+  const name = refKey(parent);
+  return patchBudget(
+    client,
+    (row) =>
+      row.split_id == null && rowKey(row.source, row.unique_id) === name
+        ? splitRows(row, parts)
+        : undefined,
+    [name],
+  );
+}
+
+/** A row being re-monthed for the budget, as `planMonthMove` receives it. */
+export interface BudgetMonthMove {
+  tx: Transaction;
+  fromYear: number;
+  fromMonth: number;
+  year: number;
+  month: number;
+}
+
+/**
+ * Move a row from one budget month to another in every cached analysis, now.
+ *
+ * The row leaves its old month and arrives in the new one, claimed by that
+ * month's rules. The copy that arrives is the one the old month listed when
+ * it is cached (it carries what the row nets to), otherwise the row as the
+ * caller has it.
+ *
+ * @param client - The app's query client.
+ * @param move - The move being sent.
+ * @returns What the patch did, for {@link budgetRefresh} and a failed write.
+ */
+export function patchBudgetForMonthMove(client: QueryClient, move: BudgetMonthMove): BudgetPatch {
+  const { tx, fromYear, fromMonth, year, month } = move;
+  const name = refKey(tx);
+  const matches = (row: AnalysisRow) =>
+    rowKey(row.source, row.unique_id) === name && (row.split_id ?? null) === (tx.split_id ?? null);
+
+  let listed: AnalysisRow | undefined;
+  for (const [, data] of client.getQueriesData<MonthlyAnalysis>({
+    queryKey: monthKey(fromYear, fromMonth),
+  })) {
+    if (data) listed ??= listedRows(data).find(matches);
+  }
+  const moved: AnalysisRow = { ...(listed ?? tx), budget_year: year, budget_month: month };
+  // A row no cached month listed is placed only if it can be budget spending
+  // at all; anything else waits for the server.
+  const arrives = listed !== undefined || (tx.amount < 0 && !NON_EXPENSE.has(tx.category ?? ""));
+
+  return patchBudget(
+    client,
+    (row) => (matches(row) && (row.budget_year !== year || row.budget_month !== month) ? [] : undefined),
+    [name],
+    (y, m) => (arrives && y === year && m === month ? [moved] : []),
+  );
+}
+
+/**
+ * Change what rows count for in every cached budget month, now — a pending
+ * refund takes its still-expected part off the purchase.
+ *
+ * @param client - The app's query client.
+ * @param nets - The new net amount (negative, as `amount`) by `rowKey`, or
+ *   `null` to count a row at its gross amount again.
+ * @returns What the patch did, for a failed write.
+ */
+export function patchBudgetNets(
+  client: QueryClient,
+  nets: ReadonlyMap<string, (row: AnalysisRow) => number | null>,
+): BudgetPatch {
+  return patchBudget(
+    client,
+    (row) => {
+      const net = row.split_id == null ? nets.get(rowKey(row.source, row.unique_id)) : undefined;
+      if (!net) return undefined;
+      const value = net(row);
+      return [{ ...row, net_amount: value === null || value === row.amount ? null : value }];
+    },
+    [...nets.keys()],
+  );
 }
 
 /** Every row a month's analysis lists, rules and projects alike. */
@@ -443,5 +731,5 @@ function listedRows(analysis: MonthlyAnalysis): AnalysisRow[] {
   return [
     ...(analysis.rules ?? []).flatMap((item) => item.data),
     ...(analysis.project_spending?.projects ?? []).flatMap((p) => p.transactions ?? []),
-  ].filter((row) => row.split_id == null);
+  ];
 }

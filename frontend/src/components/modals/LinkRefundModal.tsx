@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import {
   pendingRefundsApi,
@@ -13,7 +13,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import type { Transaction } from "../../types/transaction";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { REFUND_LINK_PLAN } from "../../writePlans";
+import { REFUND_LINK_PLAN, patchRefundLink } from "../../writePlans";
 import { useDialog } from "../../context/DialogContext";
 
 interface RefundTransactionInfo {
@@ -136,6 +136,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   const isLoading = isReverseMode ? isLoadingTransactions : isLoadingPending;
 
+  const queryClient = useQueryClient();
   const linkMutation = useMutation({
     mutationFn: (params: LinkParams) =>
       pendingRefundsApi.linkRefund(params.pendingId, {
@@ -145,7 +146,21 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         refund_split_id: params.refundSplitId ?? null,
         retag: params.retag ?? false,
       }),
-    onMutate: () => ({ refresh: REFUND_LINK_PLAN }),
+    // The refund's totals and status move under the dialog as the request
+    // goes out; the dialog itself waits for the reply, which may ask to
+    // retag the refund first.
+    onMutate: (params) => ({
+      refresh: REFUND_LINK_PLAN,
+      restore: patchRefundLink(queryClient, qk.pendingRefunds.all(), {
+        pendingId: params.pendingId,
+        link: {
+          refund_transaction_id: Number(params.refundId),
+          refund_source: params.refundSource,
+          amount: params.amount,
+        },
+      }),
+    }),
+    onError: (_error, _params, context) => context?.restore(),
     onSuccess: () => onClose(),
   });
 

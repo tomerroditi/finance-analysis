@@ -2,11 +2,18 @@ import { describe, it, expect } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   UNCHANGED_BY_ROW_WRITE,
+  cancelPendingRefund,
+  closePendingRefund,
+  markPendingRefund,
+  patchRefundLink,
+  splitInTransactionLists,
   patchTransactionLists,
   removeFromTransactionLists,
   rowsOfService,
 } from "./writePlans";
 import type { Transaction } from "./types/transaction";
+import type { PendingRefund } from "./services/api";
+import type { MonthlyAnalysis } from "./components/budget/budgetOptimistic";
 
 const ALL = ["transactions", "list", "all", false, false];
 const WITH_PARENTS = ["transactions", "list", "all", true, false];
@@ -101,5 +108,149 @@ describe("row-write plans", () => {
     expect(UNCHANGED_BY_ROW_WRITE).not.toContainEqual(["budget", "month-overrides"]);
     expect(UNCHANGED_BY_ROW_WRITE).not.toContainEqual(["onboardingStatus"]);
     expect(UNCHANGED_BY_ROW_WRITE).toContainEqual(["categories"]);
+  });
+});
+
+describe("split list patches", () => {
+  it("puts the parts in the parent's place, or after it where parents are kept", () => {
+    const client = seeded();
+
+    splitInTransactionLists(client, { source: "bank_transactions", unique_id: 5 }, [
+      { amount: -6, category: "Food", tag: "Groceries" },
+      { amount: -4, category: "Home", tag: "" },
+    ]);
+
+    const all = client.getQueryData<Transaction[]>(ALL)!;
+    expect(all.map((r) => [r.source, r.split_id ?? null, r.amount])).toEqual([
+      ["bank_transactions", -1, -6],
+      ["bank_transactions", -2, -4],
+      ["credit_card_transactions", null, -10],
+      ["bank_transactions", 1, -10],
+    ]);
+    expect(all[1]).toMatchObject({ type: "split_child", parent_unique_id: 5, tag: undefined });
+    const kept = client.getQueryData<Transaction[]>(WITH_PARENTS)!;
+    expect(kept.map((r) => r.type)).toEqual(["split_parent", "split_child", "split_child"]);
+  });
+});
+
+describe("refund patches", () => {
+  const LIST = ["pending-refunds", false];
+  const MONTH = ["budget", "analysis", 2026, 10, false, false];
+  const purchase = row("credit_card_transactions", 7, {
+    amount: -200,
+    category: "Shopping",
+    tag: "Online",
+  });
+  const open: PendingRefund = {
+    id: 3,
+    source_type: "transaction",
+    source_id: 7,
+    source_table: "credit_card_transactions",
+    expected_amount: 200,
+    status: "partial",
+    total_refunded: 50,
+    remaining: 150,
+    links: [
+      { id: 9, pending_refund_id: 3, refund_transaction_id: 41, refund_source: "bank_transactions", amount: 50 },
+    ],
+  };
+  const analysis = (net: number | null, items: PendingRefund[], expected: number): MonthlyAnalysis => ({
+    rules: [
+      {
+        rule: { id: 1, name: "Total Budget", amount: 1000, category: "Total Budget", tags: ["all_tags"] },
+        current_amount: -(net ?? -200),
+        data: [],
+        allow_edit: true,
+        allow_delete: false,
+      },
+      {
+        rule: { id: 2, name: "Shopping", amount: 500, category: "Shopping", tags: ["all_tags"] },
+        current_amount: -(net ?? -200),
+        data: [{ ...purchase, net_amount: net, split_id: null }],
+        allow_edit: true,
+        allow_delete: true,
+      },
+    ],
+    project_spending: { projects: [] },
+    pending_refunds: { items, total_expected: expected },
+  });
+  const shopping = (client: QueryClient) =>
+    client.getQueryData<MonthlyAnalysis>(MONTH)!.rules!.find((i) => i.rule.name === "Shopping")!;
+
+  it("marks a purchase at once: its badge, the awaiting section, and its cost", () => {
+    const client = new QueryClient();
+    client.setQueryData(LIST, []);
+    client.setQueryData(MONTH, analysis(null, [], 0));
+
+    const restore = markPendingRefund(client, LIST, purchase, 200);
+
+    const list = client.getQueryData<PendingRefund[]>(LIST)!;
+    expect(list).toEqual([
+      expect.objectContaining({ source_id: 7, source_table: "credit_card_transactions", status: "pending" }),
+    ]);
+    expect(list[0].id).toBeLessThan(0);
+    expect(shopping(client).current_amount).toBe(0);
+    expect(shopping(client).data[0].net_amount).toBe(0);
+    const section = client.getQueryData<MonthlyAnalysis>(MONTH)!.pending_refunds!;
+    expect(section.total_expected).toBe(200);
+    expect(section.items).toHaveLength(1);
+
+    restore();
+    expect(client.getQueryData(LIST)).toEqual([]);
+    expect(shopping(client).current_amount).toBe(200);
+  });
+
+  it("cancels a refund at once: the badge goes and the purchase counts in full", () => {
+    const client = new QueryClient();
+    client.setQueryData(LIST, [open]);
+    client.setQueryData(MONTH, analysis(0, [], 150));
+
+    cancelPendingRefund(client, LIST, 3);
+
+    expect(client.getQueryData(LIST)).toEqual([]);
+    expect(shopping(client).current_amount).toBe(200);
+    expect(shopping(client).data[0].net_amount).toBeNull();
+    expect(client.getQueryData<MonthlyAnalysis>(MONTH)!.pending_refunds!.total_expected).toBe(0);
+  });
+
+  it("closes a refund at once: only what came back is taken off the purchase", () => {
+    const client = new QueryClient();
+    client.setQueryData(LIST, [open]);
+    client.setQueryData(MONTH, analysis(0, [], 150));
+
+    closePendingRefund(client, LIST, open);
+
+    expect(client.getQueryData<PendingRefund[]>(LIST)![0].status).toBe("closed");
+    expect(shopping(client).current_amount).toBe(150);
+    expect(client.getQueryData<MonthlyAnalysis>(MONTH)!.pending_refunds!.total_expected).toBe(0);
+  });
+
+  it("unlinks and links at once, recomputing totals and status as the backend does", () => {
+    const client = new QueryClient();
+    client.setQueryData(LIST, [open]);
+    client.setQueryData(MONTH, analysis(0, [], 150));
+
+    const restore = patchRefundLink(client, LIST, { unlink: 9 });
+    expect(client.getQueryData<PendingRefund[]>(LIST)![0]).toMatchObject({
+      status: "pending",
+      total_refunded: 0,
+      remaining: 200,
+      links: [],
+    });
+    const section = client.getQueryData<MonthlyAnalysis>(MONTH)!.pending_refunds!;
+    expect(section.items!.map((r) => r.id)).toEqual([3]);
+    expect(section.total_expected).toBe(200);
+    restore();
+
+    patchRefundLink(client, LIST, {
+      pendingId: 3,
+      link: { refund_transaction_id: 42, refund_source: "bank_transactions", amount: 150 },
+    });
+    expect(client.getQueryData<PendingRefund[]>(LIST)![0]).toMatchObject({
+      status: "resolved",
+      total_refunded: 200,
+      remaining: 0,
+    });
+    expect(client.getQueryData<MonthlyAnalysis>(MONTH)!.pending_refunds!.total_expected).toBe(0);
   });
 });
