@@ -114,6 +114,17 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await page.locator('[data-card-id="heatmap"]').scrollIntoViewIfNeeded();
     await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible({ timeout: 45_000 });
 
+    // Pressing a day shows that day's spend; pressing it again clears it.
+    const heatmap = page.locator('[data-card-id="heatmap"]');
+    const firstDay = heatmap.getByRole("button", { name: /^1: / }).last();
+    await firstDay.click();
+    await expect(firstDay).toHaveAttribute("aria-pressed", "true");
+    const detail = heatmap.getByTestId("heatmap-day-detail");
+    await expect(detail).toContainText(/charge/);
+    await expect(detail).toContainText("₪");
+    await firstDay.click();
+    await expect(detail).toHaveCount(0);
+
     // The add-goal editor modal opens.
     await page
       .getByRole("button", { name: /Add goal/i })

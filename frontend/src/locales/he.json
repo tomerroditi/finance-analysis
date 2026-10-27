@@ -435,7 +435,11 @@
     },
     "heatmap": {
       "title": "לוח הוצאות",
-      "monthTotal": "החודש"
+      "monthTotal": "החודש",
+      "charges_one": "חיוב אחד",
+      "charges_two": "{{count}} חיובים",
+      "charges_many": "{{count}} חיובים",
+      "charges_other": "{{count}} חיובים"
     },
     "cards": {
       "forecast": "החודש (תחזית)",
