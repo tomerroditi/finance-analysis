@@ -160,6 +160,24 @@ export interface RefreshPlan {
   only?: readonly QueryKey[];
 }
 
+/**
+ * The window event the mutation cache dispatches when the server refuses a
+ * write that had already changed the screen. One global listener
+ * (`useWriteRevertedToast`) tells the user, so the change undoing itself is
+ * never silent, whichever of the app's writes it was.
+ */
+export const WRITE_REVERTED_EVENT = "write-reverted";
+
+/**
+ * Whether a write changed the screen ahead of the server: by convention its
+ * `onMutate` then returns `restore`, which its `onError` calls to put the
+ * screen back.
+ */
+const changedTheScreen = (onMutateResult: unknown): boolean =>
+  typeof onMutateResult === "object" &&
+  onMutateResult !== null &&
+  typeof (onMutateResult as { restore?: unknown }).restore === "function";
+
 const planOf = (onMutateResult: unknown): RefreshPlan => {
   if (typeof onMutateResult !== "object" || onMutateResult === null) return {};
   return (onMutateResult as { refresh?: RefreshPlan }).refresh ?? {};
@@ -203,6 +221,14 @@ export function createMutationCache(
       for (const queryKey of planOf(onMutateResult).first ?? []) {
         void client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false });
       }
+    },
+    // A write that answered on click and was then refused undoes itself in
+    // its own `onError`; this says so. A write that reports its own failure
+    // (a toast of its own, an error inside its dialog) sets
+    // `meta: { reportsOwnError: true }` so the user is not told twice.
+    onError: (_error, _variables, onMutateResult, mutation) => {
+      if (!changedTheScreen(onMutateResult) || mutation.meta?.reportsOwnError === true) return;
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(WRITE_REVERTED_EVENT));
     },
     // On settled rather than on success: a write that failed still cancelled
     // the reads above, and they have to be re-issued or the screen keeps

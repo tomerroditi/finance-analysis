@@ -87,6 +87,7 @@ export function SplitTransactionModal({
   // out. Options-level callbacks belong to the mutation, not to this dialog,
   // so a failure still puts everything back and says so after it closed.
   const splitMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: ({ uniqueId, parts }: { uniqueId: string | number; parts: SplitPart[] }) =>
       transactionsApi.split(uniqueId, { source: transaction.source || "", splits: parts }),
     onMutate: ({ uniqueId, parts }) => {

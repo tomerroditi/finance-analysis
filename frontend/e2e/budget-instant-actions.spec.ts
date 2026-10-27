@@ -139,6 +139,31 @@ test.describe("Monthly budget row actions answer on click", () => {
     await expect(row.getByTitle("Pending refund")).toBeVisible();
   });
 
+  test("a refused refund mark undoes itself and says so", async ({ page }) => {
+    const { tx, rule } = await pickRuleExpense();
+    const row = await openRow(page, rule, tx);
+    const before = (await ruleFigures(page, rule).textContent()) ?? "";
+
+    let refuse: () => Promise<void> = async () => {};
+    const sent = new Promise<void>((resolve) => {
+      void page.route("**/api/pending-refunds/", (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        refuse = () => route.fulfill({ status: 500, json: { detail: "Internal server error" } });
+        resolve();
+      });
+    });
+    await row.getByTitle("Mark as pending refund").click();
+    await sent;
+    await expect(row.getByTitle("Pending refund")).toBeVisible();
+    await expect(ruleFigures(page, rule)).not.toHaveText(before);
+
+    await refuse();
+
+    await expect(page.getByText("Couldn't save that change, so it was undone.")).toBeVisible();
+    await expect(row.getByTitle("Mark as pending refund")).toBeVisible();
+    await expect(ruleFigures(page, rule)).toHaveText(before);
+  });
+
   test("moving a row to the previous month takes it and its cost out of this month", async ({ page }) => {
     const { tx, rule } = await pickRuleExpense();
     const row = await openRow(page, rule, tx);

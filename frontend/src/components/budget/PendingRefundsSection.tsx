@@ -44,6 +44,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     onError: (_error, _id, context) => context?.restore(),
   });
   const cancelMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (id: number) => pendingRefundsApi.cancel(id),
     onMutate: (id) => ({
       refresh: REFUND_WRITE_PLAN,

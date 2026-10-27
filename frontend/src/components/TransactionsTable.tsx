@@ -502,6 +502,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const deleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(tx.unique_id || "", tx.source || ""),
     onMutate: (tx) => deletePlan([tx]),
@@ -509,6 +510,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const bulkDeleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: async (txs: Transaction[]) => {
       // Let all deletes settle so one failure doesn't abort the rest, and
       // resolve (not reject) on partial failure so the global

@@ -63,6 +63,7 @@ export function TransactionEditorModal({
   // stale reads are dropped and the refresh after it follows the patch's
   // plan — the touched budget month first.
   const updateMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (amount: number) =>
       transactionsApi.update(transaction.unique_id, {
         ...formData,

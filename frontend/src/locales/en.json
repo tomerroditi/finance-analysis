@@ -58,7 +58,8 @@
     "remove": "Remove",
     "clear": "Clear",
     "details": "Details",
-    "reset": "Reset"
+    "reset": "Reset",
+    "writeReverted": "Couldn't save that change, so it was undone."
   },
   "onboarding": {
     "welcome": "Welcome to Finance Analysis",

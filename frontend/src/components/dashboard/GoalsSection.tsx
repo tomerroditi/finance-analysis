@@ -207,7 +207,16 @@ export function GoalsSection() {
       }
       // Order decides which goal claims a row two goals' rules both match,
       // so the budget month's goal movements can change too — nothing else.
-      return { previous, refresh: { only: [qkPrefix.savingsGoals, qkPrefix.budgetAnalysis] } };
+      return {
+        refresh: { only: [qkPrefix.savingsGoals, qkPrefix.budgetAnalysis] },
+        // Only the last reorder in the queue may put an order back: an
+        // earlier one's is one the user has already moved past.
+        restore: () => {
+          if (previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+            queryClient.setQueryData(key, previous);
+          }
+        },
+      };
     },
     // Only the last reorder in the queue may write: an earlier one's answer
     // is for an order the user has already moved past.
@@ -216,11 +225,7 @@ export function GoalsSection() {
         queryClient.setQueryData(qk.savingsGoals.all(), res.data);
       }
     },
-    onError: (_err, _ids, context) => {
-      if (context?.previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
-        queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
-      }
-    },
+    onError: (_err, _ids, context) => context?.restore(),
   });
 
   const goals = data ?? [];

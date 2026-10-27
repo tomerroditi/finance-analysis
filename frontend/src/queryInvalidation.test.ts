@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { createMutationCache } from "./queryInvalidation";
+import { WRITE_REVERTED_EVENT, createMutationCache } from "./queryInvalidation";
 
 /**
  * A write must not be undone by a read that predates it.
@@ -390,5 +390,43 @@ describe("the app-wide mutation cache", () => {
     await pending;
     expect(resolved).toBe(true);
     expect(client.getQueryData(key)).toBe("loaded");
+  });
+});
+
+describe("a refused write that had changed the screen", () => {
+  /** Run one failing write through the app's cache; count the notices it raises. */
+  async function failWith(onMutateResult: unknown, meta?: Record<string, unknown>) {
+    const client = makeClient();
+    const heard = vi.fn();
+    window.addEventListener(WRITE_REVERTED_EVENT, heard);
+    try {
+      await client
+        .getMutationCache()
+        .build(client, {
+          mutationFn: async () => {
+            throw new Error("refused");
+          },
+          onMutate: () => onMutateResult,
+          meta,
+        })
+        .execute(undefined)
+        .catch(() => undefined);
+    } finally {
+      window.removeEventListener(WRITE_REVERTED_EVENT, heard);
+    }
+    return heard.mock.calls.length;
+  }
+
+  it("is announced, so the change undoing itself is never silent", async () => {
+    expect(await failWith({ restore: () => {} })).toBe(1);
+  });
+
+  it("is not announced twice for a write that reports its own failure", async () => {
+    expect(await failWith({ restore: () => {} }, { reportsOwnError: true })).toBe(0);
+  });
+
+  it("is not announced for a write that showed nothing ahead of the server", async () => {
+    expect(await failWith({ refresh: {} })).toBe(0);
+    expect(await failWith(undefined)).toBe(0);
   });
 });

@@ -150,13 +150,13 @@ export function RecurringSection() {
           applyDecisions(summary, decisions, key[2] === true),
         );
       });
-      return { snapshot, refresh: VERDICT_PLAN };
+      return {
+        refresh: VERDICT_PLAN,
+        restore: () =>
+          snapshot.forEach(([key, summary]) => queryClient.setQueryData(key, summary)),
+      };
     },
-    onError: (_error, _decisions, context) => {
-      context?.snapshot.forEach(([key, summary]) =>
-        queryClient.setQueryData(key, summary),
-      );
-    },
+    onError: (_error, _decisions, context) => context?.restore(),
     // No invalidation here on purpose. A verdict moves money between
     // "committed" and "free to spend", so the budget Overview and every
     // analytics figure built on recurring charges do have to be refetched —

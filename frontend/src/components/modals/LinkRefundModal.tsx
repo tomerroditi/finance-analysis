@@ -138,6 +138,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   const queryClient = useQueryClient();
   const linkMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (params: LinkParams) =>
       pendingRefundsApi.linkRefund(params.pendingId, {
         refund_transaction_id: params.refundId,

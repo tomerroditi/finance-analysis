@@ -283,6 +283,7 @@ export function RecentTransactionsFeed({
   });
 
   const deleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(String(tx.unique_id ?? tx.id), tx.source || ""),
     onMutate: (tx) => {
