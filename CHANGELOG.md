@@ -1,3 +1,9 @@
+## v2.4.2 (2026-10-27)
+
+### Fix
+
+- **budget**: keep a retagged row in place in the budget lists (#431)
+
 ## v2.4.1 (2026-10-27)
 
 ### Fix
