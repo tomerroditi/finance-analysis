@@ -177,9 +177,15 @@ test.describe("Split transaction modal stable keys", () => {
       type?: string;
     };
     const txns: ApiTxn[] = await (await request.get(`${API_BASE}/transactions/`)).json();
-    // A card purchase in the latest month on file, outside Food and the
-    // non-expense categories, big enough for its slice to be hoverable.
-    const latest = txns.map((t) => t.date.slice(0, 7)).sort().at(-1)!;
+    // A card purchase in the latest month with card rows, outside Food and
+    // the non-expense categories, big enough for its slice to be hoverable.
+    // Late in a month the bank's card bills are already dated the 1st of the
+    // next, so the latest month on file overall can hold no purchases at all.
+    const latest = txns
+      .filter((t) => t.source === "credit_card_transactions")
+      .map((t) => t.date.slice(0, 7))
+      .sort()
+      .at(-1)!;
     const parent = txns
       .filter(
         (t) =>
