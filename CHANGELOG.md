@@ -1,3 +1,9 @@
+## v2.4.1 (2026-10-27)
+
+### Fix
+
+- **dashboard**: open the source picker across the card with full labels (#430)
+
 ## v2.4.0 (2026-10-27)
 
 ### Feat
