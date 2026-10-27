@@ -18,6 +18,8 @@ interface LedgerTx {
   source: string;
   category: string | null;
   amount: number;
+  date: string;
+  split_id?: number | null;
 }
 
 interface AnalysisRule {
@@ -28,6 +30,8 @@ interface AnalysisRule {
 
 const TARGET_RULE = "Entertainment Budget";
 const TARGET_CATEGORY = "Entertainment";
+
+const rowKey = (tx: LedgerTx) => `${tx.source}_${tx.unique_id}`;
 
 /** An untagged expense the current month's "Other Expenses" list holds. */
 async function pickUntaggedExpense(): Promise<LedgerTx> {
@@ -50,6 +54,35 @@ async function pickUntaggedExpense(): Promise<LedgerTx> {
   }
 }
 
+/**
+ * An untagged expense in "Other Expenses" that shares its date with another
+ * row of the month's pool, with the keys of every pool row on that date.
+ */
+async function pickUntaggedWithSameDaySibling(): Promise<{ tx: LedgerTx; sameDay: string[] }> {
+  const now = new Date();
+  const ctx = await request.newContext({ extraHTTPHeaders: { "X-FAD-Demo": "1" } });
+  try {
+    const res = await ctx.get(
+      `${API_BASE}/budget/analysis/${now.getFullYear()}/${now.getMonth() + 1}`,
+    );
+    expect(res.ok()).toBeTruthy();
+    const { rules } = (await res.json()) as { rules: AnalysisRule[] };
+    const pool = rules
+      .filter((r) => r.rule.name !== "Total Budget")
+      .flatMap((r) => r.data)
+      .filter((row) => row.split_id == null);
+    const other = rules.find((r) => r.rule.name === "Other Expenses");
+    for (const tx of other?.data ?? []) {
+      if (tx.category || tx.amount >= 0 || tx.source === "cash_transactions" || tx.split_id != null) continue;
+      const sameDay = pool.filter((row) => row.date === tx.date).map(rowKey);
+      if (sameDay.length > 1) return { tx, sameDay };
+    }
+    throw new Error("demo data has no untagged expense sharing a day this month");
+  } finally {
+    await ctx.dispose();
+  }
+}
+
 /** The figures cell of one monthly rule row, e.g. "0 ₪ / 800 ₪". */
 const ruleFigures = (page: Page, name: string) =>
   page
@@ -57,8 +90,6 @@ const ruleFigures = (page: Page, name: string) =>
     .getByTestId("ledger-figures")
     .filter({ visible: true })
     .first();
-
-const rowKey = (tx: LedgerTx) => `${tx.source}_${tx.unique_id}`;
 
 /**
  * Find the row in the expanded pool's list and stage a retag into the target
@@ -180,5 +211,45 @@ test.describe("Monthly budget retag", () => {
     for (const unchanged of ["/budget/projects/status", "/budget/category-conflicts", "/onboarding/status"]) {
       expect(requested.filter((path) => path.endsWith(unchanged))).toEqual([]);
     }
+  });
+
+  test("a retagged row keeps its place in the month's list", async ({ page }) => {
+    const { tx, sameDay } = await pickUntaggedWithSameDaySibling();
+
+    let holding = false;
+    const held: Route[] = [];
+    await page.route("**/api/budget/analysis/**", (route) =>
+      holding ? held.push(route) : route.continue(),
+    );
+
+    await navigateTo(page, "/budget");
+    await openMonthly(page);
+    await page.getByRole("button", { name: "View month transactions" }).click();
+    await stageRetag(page, tx);
+
+    const list = page.getByTestId("budget-tx-list").filter({ visible: true }).first();
+    const dayOrder = () =>
+      list
+        .locator("[data-tx-key]")
+        .evaluateAll(
+          (els, keys) => els.map((el) => el.getAttribute("data-tx-key")).filter((key) => keys.includes(key!)),
+          sameDay,
+        );
+    const before = await dayOrder();
+    expect(before.length).toBeGreaterThan(1);
+
+    const written = page.waitForResponse(
+      (r) => r.url().includes(`/transactions/${tx.unique_id}/tag`) && r.ok(),
+    );
+    holding = true;
+    await applyButton(page).click();
+    await expect(page.getByTestId("recent-tx-editor")).toHaveCount(0);
+    expect(await dayOrder()).toEqual(before);
+
+    await written;
+    holding = false;
+    await Promise.all(held.map((route) => route.continue()));
+    await page.waitForLoadState("networkidle");
+    expect(await dayOrder()).toEqual(before);
   });
 });
