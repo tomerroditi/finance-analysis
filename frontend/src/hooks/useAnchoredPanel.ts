@@ -8,6 +8,14 @@ export interface AnchoredPanelOptions {
   minHeight?: number;
   /** Narrowest it is drawn, before clamping to the screen. */
   minWidth?: number;
+  /** Widest it is drawn; the screen clamps it further. */
+  maxWidth?: number;
+  /**
+   * Take the panel's width and side from this element instead of the trigger
+   * (e.g. the whole card), starting from its reading edge. The panel still
+   * hangs below or above the trigger.
+   */
+  alignTo?: RefObject<HTMLElement | null>;
   /** Gap between the trigger and the panel. */
   gap?: number;
   /** Room kept between the panel and the edge of what is visible. */
@@ -45,7 +53,15 @@ export interface AnchoredPanelOptions {
 export function useAnchoredPanel(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
-  { maxHeight, minHeight = 120, minWidth = 0, gap = 4, margin = 8 }: AnchoredPanelOptions,
+  {
+    maxHeight,
+    minHeight = 120,
+    minWidth = 0,
+    maxWidth = Infinity,
+    alignTo,
+    gap = 4,
+    margin = 8,
+  }: AnchoredPanelOptions,
 ): CSSProperties {
   const [style, setStyle] = useState<CSSProperties>({});
   const direction = useRef<"up" | "down" | null>(null);
@@ -64,8 +80,16 @@ export function useAnchoredPanel(
     }
     const up = direction.current === "up";
     const screenWidth = window.innerWidth;
-    const width = Math.min(Math.max(rect.width, minWidth), screenWidth - 2 * margin);
-    const left = Math.max(margin, Math.min(rect.left, screenWidth - width - margin));
+    const along = alignTo ? alignTo.current : null;
+    const side = along ? along.getBoundingClientRect() : rect;
+    const width = Math.min(
+      Math.max(side.width, minWidth),
+      maxWidth,
+      screenWidth - 2 * margin,
+    );
+    const rtl = !!along && getComputedStyle(along).direction === "rtl";
+    const start = rtl ? side.right - width : side.left;
+    const left = Math.max(margin, Math.min(start, screenWidth - width - margin));
     const next: CSSProperties = {
       ...(up
         ? { bottom: window.innerHeight - rect.top + gap }
@@ -76,7 +100,7 @@ export function useAnchoredPanel(
     };
     // Scrolling fires constantly; re-render only when the panel actually moves.
     setStyle((current) => (sameStyle(current, next) ? current : next));
-  }, [anchorRef, gap, margin, maxHeight, minHeight, minWidth]);
+  }, [alignTo, anchorRef, gap, margin, maxHeight, maxWidth, minHeight, minWidth]);
 
   useEffect(() => {
     if (!open) {
