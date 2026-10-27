@@ -1,3 +1,9 @@
+## v2.4.0 (2026-10-27)
+
+### Feat
+
+- **dashboard**: show a day's spend when pressing it in the spending calendar (#429)
+
 ## v2.3.1 (2026-10-26)
 
 ### Perf
