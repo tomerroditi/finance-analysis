@@ -1,3 +1,9 @@
+## v2.5.0 (2026-10-28)
+
+### Feat
+
+- **frontend**: instant feedback for every write, spinners for the ones that wait, no silent failures (#432)
+
 ## v2.4.2 (2026-10-27)
 
 ### Fix
