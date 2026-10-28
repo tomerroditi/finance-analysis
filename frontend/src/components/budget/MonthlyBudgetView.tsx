@@ -217,11 +217,13 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const rulePlan = () => ({ refresh: monthlyRulePlan(year, month) });
 
   const createMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: budgetApi.createRule,
     onMutate: rulePlan,
   });
 
   const updateMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
     onMutate: rulePlan,
@@ -481,6 +483,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       <LedgerRowAction
         kind="delete"
         label={t("budget.deleteRule")}
+        pending={deleteMutation.isPending && deleteMutation.variables === item.rule.id}
         onClick={
           item.allow_delete
             ? async () => {

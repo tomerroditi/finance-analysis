@@ -36,6 +36,7 @@ export function useYearlyRuleMutations(
   const key = qk.budget.yearly(year);
 
   const closedMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
       budgetApi.setYearlyRuleClosed(id, closed),
     onMutate: async ({ id, closed }) => ({
@@ -51,6 +52,7 @@ export function useYearlyRuleMutations(
   });
 
   const deleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
     onMutate: async (id) => ({
       refresh: yearlyRulePlan(year),

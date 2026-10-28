@@ -11,6 +11,7 @@ import { useNotify } from "../../context/DialogContext";
 import { RuleQuickAction } from "../transactions/RuleQuickAction";
 import { parseAmountInput } from "../../utils/numberFormatting";
 import { patchBudgetForRetag, widenForCascade } from "../budget/budgetOptimistic";
+import { PendingButton } from "../common/PendingButton";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string; provider?: string };
@@ -63,6 +64,7 @@ export function TransactionEditorModal({
   // stale reads are dropped and the refresh after it follows the patch's
   // plan — the touched budget month first.
   const updateMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (amount: number) =>
       transactionsApi.update(transaction.unique_id, {
         ...formData,
@@ -278,12 +280,13 @@ export function TransactionEditorModal({
             >
               {t("common.cancel")}
             </button>
-            <button
+            <PendingButton
+              pending={updateMutation.isPending}
               type="submit"
-              className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all disabled:opacity-60"
             >
               {t("modals.transactionForm.saveChanges")}
-            </button>
+            </PendingButton>
           </div>
         </form>
     </Modal>

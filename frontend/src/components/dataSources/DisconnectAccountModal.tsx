@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Archive, Trash2 } from "lucide-react";
 import { Modal } from "../common/Modal";
+import { PendingButton } from "../common/PendingButton";
 
 interface DisconnectAccountModalProps {
   isOpen: boolean;
@@ -128,9 +129,9 @@ export function DisconnectAccountModal({
         >
           {t("common.cancel")}
         </button>
-        <button
+        <PendingButton
+          pending={isPending}
           onClick={() => onConfirm(deleteData)}
-          disabled={isPending}
           className={`flex-1 min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
             deleteData
               ? "bg-[var(--danger)] hover:brightness-110 shadow-red-500/20"
@@ -140,7 +141,7 @@ export function DisconnectAccountModal({
           {deleteData
             ? t("dataSources.confirmDisconnectDelete")
             : t("dataSources.confirmDisconnectKeep")}
-        </button>
+        </PendingButton>
       </div>
     </Modal>
   );

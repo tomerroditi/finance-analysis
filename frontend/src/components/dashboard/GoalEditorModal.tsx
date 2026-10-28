@@ -12,6 +12,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { Modal } from "../common/Modal";
 import { GoalAutoLinkField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
+import { PendingButton } from "../common/PendingButton";
 
 const FIELD =
   "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
@@ -221,14 +222,15 @@ export function GoalEditorModal({
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={save.isPending}
             type="button"
             onClick={handleSubmit}
-            disabled={!canSave || save.isPending}
+            disabled={!canSave}
             className="px-4 py-2 rounded-lg text-sm font-bold bg-[var(--primary)] text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
           >
             {t("common.save")}
-          </button>
+          </PendingButton>
         </div>
       </div>
     </Modal>

@@ -131,15 +131,13 @@ export function InsightsStrip() {
       );
       return {
         refresh,
-        previous,
+        restore: () => {
+          if (previous) queryClient.setQueryData(qk.analytics.insights(), previous);
+        },
         dismissed: index >= 0 ? { insight: list[index], index } : null,
       };
     },
-    onError: (_error, _key, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(qk.analytics.insights(), context.previous);
-      }
-    },
+    onError: (_error, _key, context) => context?.restore(),
     // Offered only once the write has landed: an undo sent while the dismissal
     // is still in flight could reach the server first and be overwritten by it.
     onSuccess: (_res, _key, context) => {
@@ -165,14 +163,17 @@ export function InsightsStrip() {
         next.splice(Math.min(entry.index, next.length), 0, entry.insight);
         return next;
       });
-      return { refresh };
+      return {
+        refresh,
+        restore: () => {
+          queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
+            (old ?? []).filter((insight) => insight.key !== entry.insight.key),
+          );
+          setUndoStack((stack) => [...stack, entry]);
+        },
+      };
     },
-    onError: (_error, entry) => {
-      queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
-        (old ?? []).filter((insight) => insight.key !== entry.insight.key),
-      );
-      setUndoStack((stack) => [...stack, entry]);
-    },
+    onError: (_error, _entry, context) => context?.restore(),
   });
 
   const visible = (data ?? [])

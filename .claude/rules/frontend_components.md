@@ -75,14 +75,11 @@ const { data: rules } = useTaggingRules();
 **When to create a new shared hook:** If the same `useQuery` pattern appears in 3+ components.
 
 ### Mutations
-Use `useMutation` with `onSuccess` that invalidates related queries:
-```tsx
-const mutation = useMutation({
-  mutationFn: (data) => api.update(data),
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["relatedData"] }),
-});
-```
-**Always add `onSuccess` invalidation** — missing it means the UI won't refresh after mutations.
+Every write is a `useMutation`, and how it gives feedback — answer on click
+with a `restore`, or a `PendingButton` while it waits; a toast either way when
+it fails — is in **`frontend_writes.md`**. Don't invalidate from the
+component: the app-wide mutation cache refreshes after every write along the
+`RefreshPlan` its `onMutate` returns (CLAUDE.md → PWA / Offline Cache).
 
 #### Don't fan out invalidation in mutation hot paths
 

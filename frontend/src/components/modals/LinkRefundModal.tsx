@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import {
   pendingRefundsApi,
@@ -13,8 +13,9 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import type { Transaction } from "../../types/transaction";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { REFUND_LINK_PLAN } from "../../writePlans";
+import { REFUND_LINK_PLAN, patchRefundLink } from "../../writePlans";
 import { useDialog } from "../../context/DialogContext";
+import { PendingButton } from "../common/PendingButton";
 
 interface RefundTransactionInfo {
   id: string | number;
@@ -136,7 +137,9 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   const isLoading = isReverseMode ? isLoadingTransactions : isLoadingPending;
 
+  const queryClient = useQueryClient();
   const linkMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (params: LinkParams) =>
       pendingRefundsApi.linkRefund(params.pendingId, {
         refund_transaction_id: params.refundId,
@@ -145,7 +148,21 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         refund_split_id: params.refundSplitId ?? null,
         retag: params.retag ?? false,
       }),
-    onMutate: () => ({ refresh: REFUND_LINK_PLAN }),
+    // The refund's totals and status move under the dialog as the request
+    // goes out; the dialog itself waits for the reply, which may ask to
+    // retag the refund first.
+    onMutate: (params) => ({
+      refresh: REFUND_LINK_PLAN,
+      restore: patchRefundLink(queryClient, qk.pendingRefunds.all(), {
+        pendingId: params.pendingId,
+        link: {
+          refund_transaction_id: Number(params.refundId),
+          refund_source: params.refundSource,
+          amount: params.amount,
+        },
+      }),
+    }),
+    onError: (_error, _params, context) => context?.restore(),
     onSuccess: () => onClose(),
   });
 
@@ -598,18 +615,18 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={linkMutation.isPending}
             onClick={handleLink}
             disabled={
               (isReverseMode ? !selectedTransaction : !selectedPendingId) ||
               linkAmount <= 0 ||
-              linkAmount > maxLinkAmount + 0.005 ||
-              linkMutation.isPending
+              linkAmount > maxLinkAmount + 0.005
             }
             className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {linkMutation.isPending ? t("modals.linkRefund.linking") : t("modals.linkRefund.title")}
-          </button>
+          </PendingButton>
         </div>
       </div>
     </div>

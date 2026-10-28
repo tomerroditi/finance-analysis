@@ -41,6 +41,7 @@ import { GoalsHistoryPanel } from "./GoalsHistoryPanel";
 import { GoalEditorModal } from "./GoalEditorModal";
 import { formatChange, formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 /** How tall the goal list may stand before it scrolls in place (26rem, px). */
 const LIST_CAP_PX = 416;
@@ -121,7 +122,11 @@ export function GoalsSection() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
-    onMutate: () => plan,
+    onMutate: (id) => {
+      pending.begin(`delete:${id}`);
+      return plan;
+    },
+    onSettled: (_data, _error, id) => pending.end(`delete:${id}`),
     onError: failed,
   });
 
@@ -129,10 +134,10 @@ export function GoalsSection() {
     mutationFn: ({ goalId, amount, note }: { goalId: number; amount: number; note: string | null }) =>
       savingsGoalsApi.addEntry(goalId, amount, note),
     onMutate: ({ goalId }) => {
-      pending.begin(`goal:${goalId}`);
+      pending.begin(`entry:${goalId}`);
       return plan;
     },
-    onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
+    onSettled: (_data, _error, { goalId }) => pending.end(`entry:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -140,10 +145,10 @@ export function GoalsSection() {
   const undoMutation = useMutation({
     mutationFn: (entryId: number) => savingsGoalsApi.deleteEntry(entryId),
     onMutate: (entryId) => {
-      pending.begin(`entry:${entryId}`);
+      pending.begin(`undo:${entryId}`);
       return plan;
     },
-    onSettled: (_data, _error, entryId) => pending.end(`entry:${entryId}`),
+    onSettled: (_data, _error, entryId) => pending.end(`undo:${entryId}`),
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -151,10 +156,10 @@ export function GoalsSection() {
   const fundOneMutation = useMutation({
     mutationFn: (goalId: number) => savingsGoalsApi.fund([goalId]),
     onMutate: (goalId) => {
-      pending.begin(`goal:${goalId}`);
+      pending.begin(`fund:${goalId}`);
       return plan;
     },
-    onSettled: (_data, _error, goalId) => pending.end(`goal:${goalId}`),
+    onSettled: (_data, _error, goalId) => pending.end(`fund:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -170,10 +175,10 @@ export function GoalsSection() {
     mutationFn: ({ goalId, close }: { goalId: number; close: boolean }) =>
       close ? savingsGoalsApi.close(goalId) : savingsGoalsApi.reopen(goalId),
     onMutate: ({ goalId }) => {
-      pending.begin(`goal:${goalId}`);
+      pending.begin(`close:${goalId}`);
       return plan;
     },
-    onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
+    onSettled: (_data, _error, { goalId }) => pending.end(`close:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -207,7 +212,16 @@ export function GoalsSection() {
       }
       // Order decides which goal claims a row two goals' rules both match,
       // so the budget month's goal movements can change too — nothing else.
-      return { previous, refresh: { only: [qkPrefix.savingsGoals, qkPrefix.budgetAnalysis] } };
+      return {
+        refresh: { only: [qkPrefix.savingsGoals, qkPrefix.budgetAnalysis] },
+        // Only the last reorder in the queue may put an order back: an
+        // earlier one's is one the user has already moved past.
+        restore: () => {
+          if (previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+            queryClient.setQueryData(key, previous);
+          }
+        },
+      };
     },
     // Only the last reorder in the queue may write: an earlier one's answer
     // is for an order the user has already moved past.
@@ -216,11 +230,7 @@ export function GoalsSection() {
         queryClient.setQueryData(qk.savingsGoals.all(), res.data);
       }
     },
-    onError: (_err, _ids, context) => {
-      if (context?.previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
-        queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
-      }
-    },
+    onError: (_err, _ids, context) => context?.restore(),
   });
 
   const goals = data ?? [];
@@ -267,16 +277,17 @@ export function GoalsSection() {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {canFundAll && (
-            <button
+            <PendingButton
+              pending={fundAllMutation.isPending}
               type="button"
               onClick={() => fundAllMutation.mutate()}
-              disabled={fundAllMutation.isPending}
               title={t("dashboard.goals.fundAllHint")}
               className="flex items-center gap-1 text-xs md:text-sm font-medium text-emerald-400 hover:opacity-80 disabled:opacity-50 transition-opacity"
+              icon={<HandCoins size={15} />}
+              spinnerSize={15}
             >
-              <HandCoins size={15} />
               {t("dashboard.goals.fundAll")}
-            </button>
+            </PendingButton>
           )}
           <button
             type="button"
@@ -310,8 +321,8 @@ export function GoalsSection() {
               key={goal.id}
               goal={goal}
               rank={index + 1}
-              busy={pending.isPending(`goal:${goal.id}`)}
-              isUndoing={(entryId) => pending.isPending(`entry:${entryId}`)}
+              writing={GOAL_WRITES.find((kind) => pending.isPending(`${kind}:${goal.id}`)) ?? null}
+              isUndoing={(entryId) => pending.isPending(`undo:${entryId}`)}
               canMoveUp={index > 0}
               canMoveDown={index < goals.length - 1}
               onMoveUp={() => move(index, -1)}
@@ -425,20 +436,24 @@ function FreeCashRow({
             {t("dashboard.goals.shortfall", { amount: formatCurrency(pool.shortfall) })}
           </p>
           {pool.cover_plan.length > 0 && (
-            <button
-              type="button"
+            <PendingButton
+              pending={covering}
               onClick={onCover}
-              disabled={covering}
               className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50 transition-colors"
+              spinnerSize={12}
             >
               {t("dashboard.goals.coverIt")}
-            </button>
+            </PendingButton>
           )}
         </div>
       )}
     </div>
   );
 }
+
+/** The writes a goal's row can have in flight, each spinning its own control. */
+const GOAL_WRITES = ["entry", "fund", "close", "delete"] as const;
+type GoalWrite = (typeof GOAL_WRITES)[number];
 
 const ICON_BUTTON =
   "p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors";
@@ -448,7 +463,7 @@ const CHIP =
 function GoalRow({
   goal,
   rank,
-  busy,
+  writing,
   isUndoing,
   canMoveUp,
   canMoveDown,
@@ -463,8 +478,8 @@ function GoalRow({
 }: {
   goal: SavingsGoal;
   rank: number;
-  /** A write on this goal is in flight. */
-  busy: boolean;
+  /** The write on this goal that is in flight, if any. */
+  writing: GoalWrite | null;
   isUndoing: (entryId: number) => boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -482,6 +497,7 @@ function GoalRow({
   const [form, setForm] = useState<"add" | "take" | null>(null);
   const [showEntries, setShowEntries] = useState(false);
   const closed = !!goal.is_closed;
+  const busy = writing !== null;
   const stripeColor = closed ? "var(--text-muted)" : goal.is_achieved ? "#10b981" : "var(--primary)";
   const spentStripes = {
     backgroundImage: `repeating-linear-gradient(135deg, ${stripeColor} 0 2px, transparent 2px 5px)`,
@@ -541,24 +557,23 @@ function GoalRow({
           <button type="button" onClick={onEdit} aria-label={t("common.edit")} className={ICON_BUTTON}>
             <Pencil size={14} />
           </button>
-          <button
-            type="button"
+          <PendingButton
+            pending={writing === "close"}
             onClick={onToggleClosed}
             disabled={busy}
             aria-label={t(closed ? "dashboard.goals.reopen" : "dashboard.goals.close")}
             title={t(closed ? "dashboard.goals.reopen" : "dashboard.goals.close")}
             className={ICON_BUTTON}
-          >
-            {closed ? <LockOpen size={14} /> : <Lock size={14} />}
-          </button>
-          <button
-            type="button"
+            icon={closed ? <LockOpen size={14} /> : <Lock size={14} />}
+          />
+          <PendingButton
+            pending={writing === "delete"}
             onClick={onDelete}
+            disabled={busy}
             aria-label={t("common.delete")}
             className={`${ICON_BUTTON} hover:text-rose-400`}
-          >
-            <Trash2 size={14} />
-          </button>
+            icon={<Trash2 size={14} />}
+          />
         </div>
       </div>
 
@@ -650,18 +665,19 @@ function GoalRow({
               {t("dashboard.goals.takeOut")}
             </button>
             {showsShekels(goal.suggested_this_month) && (
-              <button
-                type="button"
+              <PendingButton
+                pending={writing === "fund"}
                 onClick={onFund}
                 disabled={busy}
                 title={t("dashboard.goals.fundHint")}
                 className={`${CHIP} text-emerald-400`}
+                icon={<HandCoins size={12} />}
+                spinnerSize={12}
               >
-                <HandCoins size={12} />
                 {t("dashboard.goals.fund", {
                   amount: formatCurrency(goal.suggested_this_month),
                 })}
-              </button>
+              </PendingButton>
             )}
           </>
         )}
@@ -684,6 +700,7 @@ function GoalRow({
           mode={form}
           goal={goal}
           busy={busy}
+          saving={writing === "entry"}
           onCancel={() => setForm(null)}
           onSubmit={(amount, note) => onEntry(amount, note, () => setForm(null))}
         />
@@ -706,12 +723,15 @@ function EntryForm({
   mode,
   goal,
   busy,
+  saving,
   onCancel,
   onSubmit,
 }: {
   mode: "add" | "take";
   goal: SavingsGoal;
   busy: boolean;
+  /** This form's own write is in flight. */
+  saving: boolean;
   onCancel: () => void;
   /** Signed: taking out submits a negative amount. */
   onSubmit: (amount: number, note: string | null) => void;
@@ -759,14 +779,15 @@ function EntryForm({
           className="min-w-0 flex-1 rounded-lg bg-[var(--surface-light)] px-3 py-1.5 text-sm"
           dir="auto"
         />
-        <button
+        <PendingButton
+          pending={saving}
           type="submit"
           disabled={!valid || busy}
           aria-label={t("common.save")}
           className="p-2 rounded-lg text-emerald-400 hover:bg-[var(--surface-light)] disabled:opacity-50"
-        >
-          <Check size={16} />
-        </button>
+          icon={<Check size={16} />}
+          spinnerSize={16}
+        />
         <button
           type="button"
           onClick={onCancel}
@@ -842,16 +863,15 @@ function EntryList({
               {formatChange(entry.amount, { compact: false })}
             </span>
             {canUndo && entry.source !== "close" ? (
-              <button
-                type="button"
+              <PendingButton
+                pending={isUndoing(entry.id)}
                 onClick={() => onUndo(entry.id)}
-                disabled={isUndoing(entry.id)}
                 aria-label={t("dashboard.goals.undoEntry")}
                 title={t("dashboard.goals.undoEntry")}
                 className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] disabled:opacity-40 transition-colors shrink-0"
-              >
-                <Undo2 size={12} />
-              </button>
+                icon={<Undo2 size={12} />}
+                spinnerSize={12}
+              />
             ) : (
               <span className="w-5 shrink-0" />
             )}

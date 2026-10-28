@@ -4,6 +4,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { Modal } from "../common/Modal";
+import { PendingButton } from "../common/PendingButton";
 
 interface BudgetRuleModalProps {
   isOpen: boolean;
@@ -248,13 +249,13 @@ export function BudgetRuleModal({
             >
               {t("common.cancel")}
             </button>
-            <button
+            <PendingButton
+              pending={isSubmitting}
               type="submit"
-              disabled={isSubmitting}
               className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50"
             >
               {isSubmitting ? t("modals.budgetRule.saving") : t("modals.budgetRule.saveRule")}
-            </button>
+            </PendingButton>
           </div>
         </form>
     </Modal>

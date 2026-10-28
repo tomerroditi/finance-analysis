@@ -160,6 +160,30 @@ export interface RefreshPlan {
   only?: readonly QueryKey[];
 }
 
+/**
+ * The window event the mutation cache dispatches when a write fails and
+ * nothing else says so. `detail.reverted` is true when the write had already
+ * changed the screen and put it back. One global listener
+ * (`useWriteFailedToast`) tells the user, so no failed write is silent,
+ * whichever of the app's writes it was.
+ */
+export const WRITE_FAILED_EVENT = "write-failed";
+
+/** What {@link WRITE_FAILED_EVENT} carries. */
+export interface WriteFailedDetail {
+  reverted: boolean;
+}
+
+/**
+ * Whether a write changed the screen ahead of the server: by convention its
+ * `onMutate` then returns `restore`, which its `onError` calls to put the
+ * screen back.
+ */
+const changedTheScreen = (onMutateResult: unknown): boolean =>
+  typeof onMutateResult === "object" &&
+  onMutateResult !== null &&
+  typeof (onMutateResult as { restore?: unknown }).restore === "function";
+
 const planOf = (onMutateResult: unknown): RefreshPlan => {
   if (typeof onMutateResult !== "object" || onMutateResult === null) return {};
   return (onMutateResult as { refresh?: RefreshPlan }).refresh ?? {};
@@ -203,6 +227,20 @@ export function createMutationCache(
       for (const queryKey of planOf(onMutateResult).first ?? []) {
         void client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false });
       }
+    },
+    // No failed write is silent. One that answered on click undoes itself in
+    // its own `onError`, and this says so; one that waited for the server and
+    // has no `onError` of its own just stops spinning, and this says that
+    // too. A write that reports its own failure (a toast of its own, an error
+    // inside its dialog, a caller's `catch`) sets
+    // `meta: { reportsOwnError: true }` so the user is not told twice.
+    onError: (_error, _variables, onMutateResult, mutation) => {
+      if (mutation.meta?.reportsOwnError === true || typeof window === "undefined") return;
+      const reverted = changedTheScreen(onMutateResult);
+      if (!reverted && mutation.options.onError) return;
+      window.dispatchEvent(
+        new CustomEvent<WriteFailedDetail>(WRITE_FAILED_EVENT, { detail: { reverted } }),
+      );
     },
     // On settled rather than on success: a write that failed still cancelled
     // the reads above, and they have to be re-issued or the screen keeps

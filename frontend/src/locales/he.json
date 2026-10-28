@@ -58,7 +58,9 @@
     "remove": "הסר",
     "clear": "נקה",
     "details": "פרטים",
-    "reset": "איפוס"
+    "reset": "איפוס",
+    "writeReverted": "לא הצלחנו לשמור את השינוי, ולכן הוא בוטל.",
+    "writeFailed": "לא הצלחנו לשמור את השינוי. נסו שוב."
   },
   "onboarding": {
     "welcome": "ברוך הבא ל‑Finance Analysis",

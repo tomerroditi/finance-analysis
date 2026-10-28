@@ -43,20 +43,21 @@ test.describe("Transactions row actions during a slow write", () => {
 
     const mark = page.getByRole("button", { name: "Mark as Pending Refund" });
     await expect(mark.first()).toBeVisible({ timeout: 45_000 });
-    expect(await mark.count()).toBeGreaterThan(1);
+    const count = await mark.count();
+    expect(count).toBeGreaterThan(1);
 
-    const first = mark.nth(0);
-    const second = mark.nth(1);
-    await first.click();
+    await mark.first().click();
 
-    // The row being written is held; every other row stays usable.
-    await expect(first).toBeDisabled();
-    await expect(second).toBeEnabled();
+    // The row being written shows its pending refund at once, so its button
+    // gives way to the badge; every other row stays usable.
+    await expect(mark).toHaveCount(count - 1);
+    await expect(mark.first()).toBeEnabled();
 
     // And a click on one of them actually reaches the backend rather than
     // landing on a dead button.
-    await second.click();
+    await mark.first().click();
     await expect.poll(() => posted).toBe(2);
+    await expect(mark).toHaveCount(count - 2);
 
     release();
     await expect.poll(() => posted, { timeout: 15_000 }).toBe(2);

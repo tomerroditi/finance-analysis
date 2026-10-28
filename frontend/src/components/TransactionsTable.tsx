@@ -54,11 +54,19 @@ import { formatCurrency } from "../utils/numberFormatting";
 import type { Transaction } from "../types/transaction";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
-import type { RefreshPlan } from "../queryInvalidation";
-import { patchBudgetForRetag, widenForCascade, type RetagEdit } from "./budget/budgetOptimistic";
+import {
+  budgetRefresh,
+  patchBudgetForDelete,
+  patchBudgetForRetag,
+  widenForCascade,
+  type RetagEdit,
+} from "./budget/budgetOptimistic";
 import {
   REFUND_WRITE_PLAN,
   UNCHANGED_BY_ROW_WRITE,
+  cancelPendingRefund,
+  markPendingRefund,
+  patchRefundLink,
   planMonthMove,
   type MonthMove,
   patchTransactionLists,
@@ -320,10 +328,17 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   /** A delete takes its rows off every list now; the refresh brings back any that failed. */
   const deletePlan = useCallback(
-    (rows: Transaction[]) => ({
-      restore: removeFromTransactionLists(queryClient, rows),
-      refresh: { skip: UNCHANGED_BY_ROW_WRITE } satisfies RefreshPlan,
-    }),
+    (rows: Transaction[]) => {
+      const restoreLists = removeFromTransactionLists(queryClient, rows);
+      const budget = patchBudgetForDelete(queryClient, rows);
+      return {
+        restore: () => {
+          restoreLists();
+          budget.restore();
+        },
+        refresh: budgetRefresh(queryClient, budget, UNCHANGED_BY_ROW_WRITE),
+      };
+    },
     [queryClient],
   );
 
@@ -377,9 +392,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       }),
     onMutate: (tx) => {
       markingRefund.begin(getTransactionId(tx));
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: markPendingRefund(queryClient, qk.pendingRefunds.all(), tx, Math.abs(tx.amount)),
+      };
     },
     onSettled: (_data, _error, tx) => markingRefund.end(getTransactionId(tx)),
+    onError: (_error, _tx, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 
@@ -387,9 +406,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
     onMutate: (pendingId) => {
       cancellingRefund.begin(pendingId);
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: cancelPendingRefund(queryClient, qk.pendingRefunds.all(), pendingId),
+      };
     },
     onSettled: (_data, _error, pendingId) => cancellingRefund.end(pendingId),
+    onError: (_error, _pendingId, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 
@@ -397,9 +420,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onMutate: (linkId) => {
       unlinkingRefund.begin(linkId);
-      return { refresh: REFUND_WRITE_PLAN };
+      return {
+        refresh: REFUND_WRITE_PLAN,
+        restore: patchRefundLink(queryClient, qk.pendingRefunds.all(), { unlink: linkId }),
+      };
     },
     onSettled: (_data, _error, linkId) => unlinkingRefund.end(linkId),
+    onError: (_error, _linkId, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });
 
@@ -475,6 +502,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const deleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(tx.unique_id || "", tx.source || ""),
     onMutate: (tx) => deletePlan([tx]),
@@ -482,6 +510,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const bulkDeleteMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: async (txs: Transaction[]) => {
       // Let all deletes settle so one failure doesn't abort the rest, and
       // resolve (not reject) on partial failure so the global

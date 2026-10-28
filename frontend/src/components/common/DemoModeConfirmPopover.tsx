@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useNotify } from "../../context/DialogContext";
+import { PendingButton } from "./PendingButton";
 
 interface DemoModeConfirmPopoverProps {
   onClose: () => void;
@@ -33,14 +34,14 @@ export function DemoModeConfirmPopover({
         {t("emptyStates.demoConfirmDescription")}
       </p>
       <div className="flex items-center justify-center gap-3">
-        <button
+        <PendingButton
+          pending={isPending}
           type="button"
           onClick={handleConfirm}
-          disabled={isPending}
           className="px-4 py-1.5 rounded-lg bg-[var(--primary)] text-white font-medium hover:bg-[var(--primary)]/90 transition-colors disabled:opacity-50"
         >
           {t("emptyStates.demoConfirmEnable")}
-        </button>
+        </PendingButton>
         <button
           type="button"
           onClick={onClose}

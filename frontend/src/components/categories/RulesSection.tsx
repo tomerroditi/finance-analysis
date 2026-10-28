@@ -21,6 +21,7 @@ import { useConfirm } from "../../context/DialogContext";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { qkPrefix } from "../../services/queryKeys";
 import { UNCHANGED_BY_RETAG } from "../budget/budgetOptimistic";
+import { PendingButton } from "../common/PendingButton";
 
 /**
  * Categories-page entry point for auto-tagging rules: a launcher card that opens
@@ -193,13 +194,15 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
                         >
                             <Plus size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.newRule")}</span>
                         </button>
-                        <button
+                        <PendingButton
+                            pending={applyMutation.isPending}
                             onClick={() => applyMutation.mutate()}
-                            disabled={applyMutation.isPending}
                             className="px-3 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50 text-sm"
+                            icon={<Play size={16} />}
+                            spinnerSize={16}
                         >
-                            <Play size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.applyRules")}</span>
-                        </button>
+                            <span className="hidden sm:inline">{t("transactions.autoTagging.applyRules")}</span>
+                        </PendingButton>
                         <button
                             onClick={onClose}
                             aria-label={t("common.close")}

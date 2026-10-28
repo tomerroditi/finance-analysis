@@ -6,6 +6,7 @@ import { savingsGoalsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { Skeleton } from "../common/Skeleton";
+import { PendingButton } from "../common/PendingButton";
 
 /** How many past years the summary line names. */
 const PAST_YEARS_SHOWN = 3;
@@ -107,14 +108,14 @@ export function YearlySavingsSection() {
             className="w-full rounded-lg bg-[var(--surface-light)] px-3 py-1.5 text-sm"
             dir="ltr"
           />
-          <button
+          <PendingButton
+            pending={save.isPending}
             type="submit"
-            disabled={save.isPending}
             aria-label={t("common.save")}
             className="p-2 rounded-lg text-emerald-400 hover:bg-[var(--surface-light)] disabled:opacity-50"
-          >
-            <Check size={16} />
-          </button>
+            icon={<Check size={16} />}
+            spinnerSize={16}
+          />
           <button
             type="button"
             onClick={() => setEditing(false)}

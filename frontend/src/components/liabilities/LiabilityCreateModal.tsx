@@ -6,6 +6,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
 import type { CurrentRates } from "../../services/api";
 import { AMORTIZATION_METHODS, LOAN_TYPES, isPrimeBased } from "./loanTypes";
+import { PendingButton } from "../common/PendingButton";
 
 export interface NewLiabilityForm {
   name: string;
@@ -275,7 +276,8 @@ export function LiabilityCreateModal({
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={isPending}
             disabled={
               !form.name ||
               !form.tag ||
@@ -283,14 +285,13 @@ export function LiabilityCreateModal({
               (!tagDetection.has_receipt &&
                 (!form.principal_amount || !form.start_date)) ||
               !rateFieldsValid ||
-              !form.term_months ||
-              isPending
+              !form.term_months
             }
             onClick={onSubmit}
             className="flex-1 py-3 text-sm font-bold bg-[var(--primary)] text-white rounded-xl hover:bg-[var(--primary-dark)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isPending ? "..." : t("common.save")}
-          </button>
+            {t("common.save")}
+          </PendingButton>
         </div>
       </div>
     </Modal>

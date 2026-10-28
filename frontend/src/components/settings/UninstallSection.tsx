@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { uninstallApi } from "../../services/api";
 import { useVersionInfo } from "../../hooks/useVersionInfo";
+import { PendingButton } from "../common/PendingButton";
 
 /**
  * Settings → Advanced → Uninstall (macOS only).
@@ -85,15 +86,16 @@ export function UninstallSection() {
         </span>
       </label>
 
-      <button
+      <PendingButton
+        pending={uninstallMutation.isPending}
         type="button"
         onClick={handleClick}
-        disabled={uninstallMutation.isPending}
         className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25 transition-colors disabled:opacity-50"
+        icon={<Trash2 size={12} />}
+        spinnerSize={12}
       >
-        <Trash2 size={12} />
         {t("uninstall.openButton")}
-      </button>
+      </PendingButton>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2, AlertCircle } from "lucide-react";
 import { transactionsApi } from "../../services/api";
@@ -9,6 +9,12 @@ import { useCategories } from "../../hooks/useCategories";
 import { Modal } from "../common/Modal";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useNotify } from "../../context/DialogContext";
+import {
+  budgetRefresh,
+  patchBudgetForSplit,
+  type SplitPart,
+} from "../budget/budgetOptimistic";
+import { UNCHANGED_BY_ROW_WRITE, splitInTransactionLists } from "../../writePlans";
 
 interface SplitTransactionModalProps {
   transaction: { id?: string | number; unique_id?: string | number; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
@@ -74,23 +80,34 @@ export function SplitTransactionModal({
     setSplits(newSplits);
   };
 
-  // A write, not a bare request: it goes through the app's mutation cache,
-  // which drops reads that predate it and refreshes everything after it.
+  const queryClient = useQueryClient();
+
+  // The split answers on click: the parts take the parent's place in every
+  // cached list and budget month, and the dialog closes as the request goes
+  // out. Options-level callbacks belong to the mutation, not to this dialog,
+  // so a failure still puts everything back and says so after it closed.
   const splitMutation = useMutation({
-    mutationFn: (uniqueId: string | number) =>
-      transactionsApi.split(uniqueId, {
-        source: transaction.source || "",
-        splits: splits.map((s) => ({
-          amount: s.amount,
-          category: s.category,
-          tag: s.tag,
-        })),
-      }),
-    onSuccess: () => {
-      onSuccess();
+    meta: { reportsOwnError: true },
+    mutationFn: ({ uniqueId, parts }: { uniqueId: string | number; parts: SplitPart[] }) =>
+      transactionsApi.split(uniqueId, { source: transaction.source || "", splits: parts }),
+    onMutate: ({ uniqueId, parts }) => {
+      const parent = { source: transaction.source, unique_id: uniqueId };
+      const restoreLists = splitInTransactionLists(queryClient, parent, parts);
+      const budget = patchBudgetForSplit(queryClient, parent, parts);
       onClose();
+      return {
+        restore: () => {
+          restoreLists();
+          budget.restore();
+        },
+        refresh: budgetRefresh(queryClient, budget, UNCHANGED_BY_ROW_WRITE),
+      };
     },
-    onError: () => notify.error(t("transactions.failedSplit")),
+    onSuccess: () => onSuccess(),
+    onError: (_error, _vars, context) => {
+      context?.restore();
+      notify.error(t("transactions.failedSplit"));
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,7 +124,10 @@ export function SplitTransactionModal({
       return;
     }
 
-    splitMutation.mutate(uniqueId);
+    splitMutation.mutate({
+      uniqueId,
+      parts: splits.map((s) => ({ amount: s.amount, category: s.category, tag: s.tag })),
+    });
   };
 
   return (
